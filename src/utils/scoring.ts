@@ -26,50 +26,80 @@ export function buildUserVector(answers: AnswerMap): AxisVector {
   const result = emptyVector();
 
   for (const axis of axes) {
-    const maxValue = max[axis.id];
-    result[axis.id] = maxValue === 0 ? 0 : round((raw[axis.id] / maxValue) * 10);
+    const axisMax = max[axis.id];
+    result[axis.id] = axisMax === 0 ? 0 : round((raw[axis.id] / axisMax) * 10);
   }
 
   return result;
 }
 
-function distance(a: AxisVector, b: AxisVector): number {
-  let sum = 0;
+function closenessScore(a: AxisVector, b: AxisVector): number {
+  let totalDiff = 0;
 
   for (const axis of axes) {
-    const diff = a[axis.id] - b[axis.id];
-    sum += diff * diff;
+    totalDiff += Math.abs(a[axis.id] - b[axis.id]);
   }
 
-  return Math.sqrt(sum);
+  const averageDiff = totalDiff / axes.length;
+  return Math.max(0, 100 - averageDiff * 5);
 }
 
-function similarityFromDistance(distanceValue: number): number {
-  const maxDistance = Math.sqrt(axes.length * 20 * 20);
-  const similarity = (1 - distanceValue / maxDistance) * 100;
-  return Math.max(0, Math.min(100, Math.round(similarity)));
+function directionScore(a: AxisVector, b: AxisVector): number {
+  let points = 0;
+
+  for (const axis of axes) {
+    const av = a[axis.id];
+    const bv = b[axis.id];
+
+    const aNearCenter = Math.abs(av) < 1.5;
+    const bNearCenter = Math.abs(bv) < 1.5;
+
+    if (aNearCenter && bNearCenter) {
+      points += 1;
+      continue;
+    }
+
+    if ((av > 0 && bv > 0) || (av < 0 && bv < 0)) {
+      points += 1;
+      continue;
+    }
+
+    if (aNearCenter || bNearCenter) {
+      points += 0.5;
+      continue;
+    }
+  }
+
+  return (points / axes.length) * 100;
 }
 
-export function getTopIdeologyMatches(userVector: AxisVector, count = 5): MatchResult[] {
+function profileSimilarity(a: AxisVector, b: AxisVector): number {
+  const closeness = closenessScore(a, b);
+  const direction = directionScore(a, b);
+
+  return Math.round(closeness * 0.8 + direction * 0.2);
+}
+
+export function getTopIdeologyMatches(userVector: AxisVector, count = 8): MatchResult[] {
   return ideologies
     .map((profile) => ({
       id: profile.id,
       name: profile.name,
       shortDescription: profile.shortDescription,
-      similarity: similarityFromDistance(distance(userVector, profile.vector)),
+      similarity: profileSimilarity(userVector, profile.vector),
     }))
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, count);
 }
 
-export function getTopFigureMatches(userVector: AxisVector, count = 5): MatchResult[] {
+export function getTopFigureMatches(userVector: AxisVector, count = 8): MatchResult[] {
   return figures
     .map((profile) => ({
       id: profile.id,
       name: profile.name,
       role: profile.role,
       era: profile.era,
-      similarity: similarityFromDistance(distance(userVector, profile.vector)),
+      similarity: profileSimilarity(userVector, profile.vector),
     }))
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, count);

@@ -55,19 +55,29 @@ function App() {
   const currentAnswer = currentQuestion ? answers[currentQuestion.id] : undefined;
 
   const userVector = useMemo(() => buildUserVector(answers), [answers]);
-  const ideologyMatches = useMemo(() => getTopIdeologyMatches(userVector, 8), [userVector]);
-  const figureMatches = useMemo(() => getTopFigureMatches(userVector, 8), [userVector]);
+  const ideologyMatches = useMemo(() => getTopIdeologyMatches(userVector, 10), [userVector]);
+  const figureMatches = useMemo(() => getTopFigureMatches(userVector, 10), [userVector]);
   const narrative = useMemo(() => buildNarrative(userVector, ideologyMatches, figureMatches), [userVector, ideologyMatches, figureMatches]);
   const shareText = useMemo(() => buildShareText(userVector, ideologyMatches, figureMatches), [userVector, ideologyMatches, figureMatches]);
 
-  const answerValues = Object.values(answers).filter((value): value is number => value !== null && value !== undefined);
-  const answeredCount = answerValues.length;
-  const skippedCount = Object.values(answers).filter((value) => value === null).length;
-  const completion = Math.round(((answeredCount + skippedCount) / questions.length) * 100);
-  const responseRate = Math.round((answeredCount / questions.length) * 100);
-  const conviction = answeredCount === 0
+const answerValues = Object.values(answers).filter(
+  (value): value is Exclude<AnswerValue, null> =>
+    value !== null && value !== undefined
+);
+
+const answeredCount = answerValues.length;
+const skippedCount = Object.values(answers).filter((value) => value === null).length;
+const completion = Math.round(((answeredCount + skippedCount) / questions.length) * 100);
+const responseRate = Math.round((answeredCount / questions.length) * 100);
+
+const conviction =
+  answeredCount === 0
     ? 0
-    : Math.round((answerValues.reduce((sum, value) => sum + Math.abs(value), 0) / (answeredCount * 3)) * 100);
+    : Math.round(
+        (answerValues.reduce<number>((sum, value) => sum + Math.abs(value), 0) /
+          (answeredCount * 3)) *
+          100
+      );
 
   function startTest() {
     setStarted(true);
