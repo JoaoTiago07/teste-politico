@@ -2,17 +2,20 @@ import { axes, emptyVector } from '../data/axes';
 import { figures } from '../data/figures';
 import { ideologies } from '../data/ideologies';
 import { questions } from '../data/questions';
-import type { AnswerMap, AxisVector, MatchResult } from '../types';
+import type { AnswerMap, AxisVector, MatchResult, Question } from '../types';
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-export function buildUserVector(answers: AnswerMap): AxisVector {
+export function buildUserVector(
+  answers: AnswerMap,
+  questionSet: Question[] = questions
+): AxisVector {
   const raw = emptyVector();
   const max = emptyVector();
 
-  for (const question of questions) {
+  for (const question of questionSet) {
     const answer = answers[question.id];
 
     if (answer === null || answer === undefined) continue;

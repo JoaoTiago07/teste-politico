@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import './index.css';
 import { axes } from './data/axes';
-import { questions } from './data/questions';
-import { buildUserVector, getTopFigureMatches, getTopIdeologyMatches } from './utils/scoring';
+import { figures } from './data/figures';
+import { ideologies } from './data/ideologies';
+import { methodologySections } from './data/methodology';
+import { questions, quickQuestionIds } from './data/questions';
 import { buildNarrative, buildShareText } from './utils/narrative';
 import {
   getCoherenceInsight,
@@ -10,7 +12,11 @@ import {
   getFigureExplanation,
   getIdeologyExplanation,
 } from './utils/insights';
-import type { AnswerMap, AnswerValue } from './types';
+import { buildUserVector, getTopFigureMatches, getTopIdeologyMatches } from './utils/scoring';
+import type { AnswerMap, AnswerValue, AxisVector } from './types';
+import RadarChart from './components/RadarChart';
+
+type TestMode = 'quick' | 'full';
 
 const answerOptions: { label: string; value: AnswerValue }[] = [
   { label: 'Discordo totalmente', value: -3 },
@@ -22,7 +28,7 @@ const answerOptions: { label: string; value: AnswerValue }[] = [
   { label: 'Concordo totalmente', value: 3 },
 ];
 
-const STORAGE_KEY = 'teste-politico-estado-v3';
+const STORAGE_KEY = 'teste-politico-estado-v4';
 
 function formatSigned(value: number): string {
   return value > 0 ? `+${value.toFixed(1)}` : value.toFixed(1);
@@ -34,6 +40,10 @@ function App() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [copyFeedback, setCopyFeedback] = useState('');
+  const [testMode, setTestMode] = useState<TestMode>('full');
+  const [showMethodology, setShowMethodology] = useState(false);
+  const [selectedIdeologyId, setSelectedIdeologyId] = useState<string | null>(null);
+  const [selectedFigureId, setSelectedFigureId] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -45,6 +55,7 @@ function App() {
       setFinished(parsed.finished ?? false);
       setCurrentIndex(parsed.currentIndex ?? 0);
       setAnswers(parsed.answers ?? {});
+      setTestMode(parsed.testMode ?? 'full');
     } catch {
       console.error('Não foi possível recuperar o progresso guardado.');
     }
@@ -53,20 +64,60 @@ function App() {
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ started, finished, currentIndex, answers })
+      JSON.stringify({ started, finished, currentIndex, answers, testMode })
     );
-  }, [started, finished, currentIndex, answers]);
+  }, [started, finished, currentIndex, answers, testMode]);
 
-  const currentQuestion = questions[currentIndex];
+  const activeQuestions = useMemo(
+    () =>
+      testMode === 'quick'
+        ? questions.filter((question) => quickQuestionIds.includes(question.id))
+        : questions,
+    [testMode]
+  );
+
+  useEffect(() => {
+    if (currentIndex >= activeQuestions.length && activeQuestions.length > 0) {
+      setCurrentIndex(activeQuestions.length - 1);
+    }
+  }, [currentIndex, activeQuestions]);
+
+  const currentQuestion = activeQuestions[currentIndex];
   const currentAnswer = currentQuestion ? answers[currentQuestion.id] : undefined;
 
-  const userVector = useMemo(() => buildUserVector(answers), [answers]);
+  const relevantAnswerEntries = useMemo(
+    () => activeQuestions.map((question) => answers[question.id]),
+    [activeQuestions, answers]
+  );
+
+  const answerValues = relevantAnswerEntries.filter(
+    (value): value is Exclude<AnswerValue, null> =>
+      value !== null && value !== undefined
+  );
+
+  const answeredCount = answerValues.length;
+  const skippedCount = relevantAnswerEntries.filter((value) => value === null).length;
+  const completion = Math.round(((answeredCount + skippedCount) / activeQuestions.length) * 100);
+  const responseRate = Math.round((answeredCount / activeQuestions.length) * 100);
+
+  const conviction =
+    answeredCount === 0
+      ? 0
+      : Math.round(
+          (answerValues.reduce<number>((sum, value) => sum + Math.abs(value), 0) /
+            (answeredCount * 3)) *
+            100
+        );
+
+  const userVector = useMemo(() => buildUserVector(answers, activeQuestions), [answers, activeQuestions]);
   const ideologyMatches = useMemo(() => getTopIdeologyMatches(userVector, 10), [userVector]);
   const figureMatches = useMemo(() => getTopFigureMatches(userVector, 10), [userVector]);
+
   const narrative = useMemo(
     () => buildNarrative(userVector, ideologyMatches, figureMatches),
     [userVector, ideologyMatches, figureMatches]
   );
+
   const shareText = useMemo(
     () => buildShareText(userVector, ideologyMatches, figureMatches),
     [userVector, ideologyMatches, figureMatches]
@@ -86,24 +137,28 @@ function App() {
     [userVector, figureMatches]
   );
 
-  const answerValues = Object.values(answers).filter(
-    (value): value is Exclude<AnswerValue, null> =>
-      value !== null && value !== undefined
+  const topIdeologyProfile = useMemo(
+    () => ideologies.find((item) => item.id === ideologyMatches[0]?.id),
+    [ideologyMatches]
   );
 
-  const answeredCount = answerValues.length;
-  const skippedCount = Object.values(answers).filter((value) => value === null).length;
-  const completion = Math.round(((answeredCount + skippedCount) / questions.length) * 100);
-  const responseRate = Math.round((answeredCount / questions.length) * 100);
+  const selectedIdeology = useMemo(
+    () => ideologies.find((item) => item.id === selectedIdeologyId) ?? null,
+    [selectedIdeologyId]
+  );
 
-  const conviction =
-    answeredCount === 0
-      ? 0
-      : Math.round(
-          (answerValues.reduce<number>((sum, value) => sum + Math.abs(value), 0) /
-            (answeredCount * 3)) *
-            100
-        );
+  const selectedFigure = useMemo(
+    () => figures.find((item) => item.id === selectedFigureId) ?? null,
+    [selectedFigureId]
+  );
+
+  const selectedIdeologyMatch = selectedIdeologyId
+    ? ideologyMatches.find((match) => match.id === selectedIdeologyId)
+    : undefined;
+
+  const selectedFigureMatch = selectedFigureId
+    ? figureMatches.find((match) => match.id === selectedFigureId)
+    : undefined;
 
   function startTest() {
     setStarted(true);
@@ -121,7 +176,7 @@ function App() {
 
     setAnswers(nextAnswers);
 
-    if (currentIndex === questions.length - 1) {
+    if (currentIndex === activeQuestions.length - 1) {
       setFinished(true);
       return;
     }
@@ -142,6 +197,8 @@ function App() {
     setCurrentIndex(0);
     setAnswers({});
     setCopyFeedback('');
+    setSelectedIdeologyId(null);
+    setSelectedFigureId(null);
   }
 
   async function copyResults() {
@@ -153,6 +210,42 @@ function App() {
       setCopyFeedback('Não foi possível copiar.');
       setTimeout(() => setCopyFeedback(''), 2000);
     }
+  }
+
+  function openIdeologyDetail(id: string) {
+    setSelectedFigureId(null);
+    setSelectedIdeologyId(id);
+  }
+
+  function openFigureDetail(id: string) {
+    setSelectedIdeologyId(null);
+    setSelectedFigureId(id);
+  }
+
+  function closeDetail() {
+    setSelectedIdeologyId(null);
+    setSelectedFigureId(null);
+  }
+
+  function renderAxisComparison(profileVector: AxisVector) {
+    return axes.map((axis) => {
+      const userValue = userVector[axis.id];
+      const profileValue = profileVector[axis.id];
+      const difference = Math.abs(userValue - profileValue);
+
+      return (
+        <div key={axis.id} className="axis-compare-row">
+          <div className="match-top">
+            <strong>{axis.label}</strong>
+            <span>Δ {difference.toFixed(1)}</span>
+          </div>
+          <div className="compare-values">
+            <span>Tu: {formatSigned(userValue)}</span>
+            <span>Perfil: {formatSigned(profileValue)}</span>
+          </div>
+        </div>
+      );
+    });
   }
 
   if (!started) {
@@ -167,6 +260,26 @@ function App() {
               simples, explicações claras e resultados muito mais ricos do que os testes
               tradicionais.
             </p>
+
+            <div className="mode-grid">
+              <button
+                className={`mode-card ${testMode === 'quick' ? 'active' : ''}`}
+                onClick={() => setTestMode('quick')}
+              >
+                <span className="mode-badge">Modo rápido</span>
+                <strong>24 perguntas essenciais</strong>
+                <p>Mais curto, ótimo para uma leitura inicial sólida.</p>
+              </button>
+
+              <button
+                className={`mode-card ${testMode === 'full' ? 'active' : ''}`}
+                onClick={() => setTestMode('full')}
+              >
+                <span className="mode-badge">Modo completo</span>
+                <strong>{questions.length} perguntas</strong>
+                <p>Mais robusto, com retrato político mais denso e refinado.</p>
+              </button>
+            </div>
 
             <div className="hero-grid">
               <div className="glass-card">
@@ -187,12 +300,44 @@ function App() {
               <button className="primary-btn" onClick={startTest}>
                 Começar
               </button>
+              <button className="secondary-btn" onClick={() => setShowMethodology(true)}>
+                Ver metodologia
+              </button>
               <button className="secondary-btn" onClick={resetTest}>
                 Limpar progresso
               </button>
             </div>
           </section>
         </div>
+
+        {showMethodology && (
+          <div className="overlay" onClick={() => setShowMethodology(false)}>
+            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-head">
+                <div>
+                  <div className="hero-kicker">Metodologia</div>
+                  <h2>Como este teste funciona</h2>
+                </div>
+                <button className="modal-close" onClick={() => setShowMethodology(false)}>
+                  Fechar
+                </button>
+              </div>
+
+              <div className="methodology-grid">
+                {methodologySections.map((section) => (
+                  <div key={section.title} className="methodology-card">
+                    <h3>{section.title}</h3>
+                    <ul className="methodology-list">
+                      {section.items.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -210,6 +355,10 @@ function App() {
 
             <div className="metric-grid">
               <div className="metric-card">
+                <span className="metric-label">Modo</span>
+                <strong>{testMode === 'quick' ? 'Rápido' : 'Completo'}</strong>
+              </div>
+              <div className="metric-card">
                 <span className="metric-label">Taxa de resposta</span>
                 <strong>{responseRate}%</strong>
               </div>
@@ -221,27 +370,42 @@ function App() {
                 <span className="metric-label">Ideologia mais próxima</span>
                 <strong>{ideologyMatches[0]?.name ?? '—'}</strong>
               </div>
-              <div className="metric-card">
-                <span className="metric-label">Figura mais próxima</span>
-                <strong>{figureMatches[0]?.name ?? '—'}</strong>
-              </div>
             </div>
           </section>
 
-          <section className="summary-card">
-            <h2>Leitura interpretativa</h2>
-            {narrative.map((paragraph, index) => (
-              <p key={index}>{paragraph}</p>
-            ))}
+          <section className="visual-grid">
+            <div className="glass-card">
+              <h2>Mapa visual dos eixos</h2>
+              <RadarChart
+                userVector={userVector}
+                comparisonVector={topIdeologyProfile?.vector}
+                comparisonLabel={topIdeologyProfile?.name}
+              />
+              <p className="subtle-text">
+                No gráfico, o centro representa posições intermédias. Quanto mais longe do
+                centro, mais forte é a tua posição naquele eixo. A leitura exata de direção
+                continua nas barras detalhadas abaixo.
+              </p>
+            </div>
 
-            <div className="hero-actions">
-              <button className="primary-btn" onClick={copyResults}>
-                Copiar resumo
-              </button>
-              <button className="secondary-btn" onClick={resetTest}>
-                Refazer teste
-              </button>
-              {copyFeedback && <span className="copy-feedback">{copyFeedback}</span>}
+            <div className="glass-card">
+              <h2>Leitura interpretativa</h2>
+              {narrative.map((paragraph, index) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+
+              <div className="hero-actions">
+                <button className="primary-btn" onClick={copyResults}>
+                  Copiar resumo
+                </button>
+                <button className="secondary-btn" onClick={() => setShowMethodology(true)}>
+                  Ver metodologia
+                </button>
+                <button className="secondary-btn" onClick={resetTest}>
+                  Refazer teste
+                </button>
+                {copyFeedback && <span className="copy-feedback">{copyFeedback}</span>}
+              </div>
             </div>
           </section>
 
@@ -256,9 +420,7 @@ function App() {
                       <span>{family.score}%</span>
                     </div>
                     <p>{family.description}</p>
-                    <p className="subtle-text">
-                      Exemplos: {family.examples.join(', ')}
-                    </p>
+                    <p className="subtle-text">Exemplos: {family.examples.join(', ')}</p>
                   </div>
                 ))}
               </div>
@@ -359,13 +521,17 @@ function App() {
               <h2>Ideologias mais próximas</h2>
               <div className="match-list">
                 {ideologyMatches.map((match) => (
-                  <details key={match.id} className="details-card">
-                    <summary className="details-summary">
-                      <span>{match.name}</span>
-                      <strong>{match.similarity}%</strong>
-                    </summary>
+                  <button
+                    key={match.id}
+                    className="profile-link-card"
+                    onClick={() => openIdeologyDetail(match.id)}
+                  >
+                    <div className="match-top">
+                      <strong>{match.name}</strong>
+                      <span>{match.similarity}%</span>
+                    </div>
                     <p>{match.shortDescription}</p>
-                  </details>
+                  </button>
                 ))}
               </div>
             </div>
@@ -374,18 +540,109 @@ function App() {
               <h2>Figuras mais próximas</h2>
               <div className="match-list">
                 {figureMatches.map((match) => (
-                  <details key={match.id} className="details-card">
-                    <summary className="details-summary">
-                      <span>{match.name}</span>
-                      <strong>{match.similarity}%</strong>
-                    </summary>
+                  <button
+                    key={match.id}
+                    className="profile-link-card"
+                    onClick={() => openFigureDetail(match.id)}
+                  >
+                    <div className="match-top">
+                      <strong>{match.name}</strong>
+                      <span>{match.similarity}%</span>
+                    </div>
                     <p>{match.role} · {match.era}</p>
-                  </details>
+                  </button>
                 ))}
               </div>
             </div>
           </section>
         </div>
+
+        {showMethodology && (
+          <div className="overlay" onClick={() => setShowMethodology(false)}>
+            <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-head">
+                <div>
+                  <div className="hero-kicker">Metodologia</div>
+                  <h2>Como este teste funciona</h2>
+                </div>
+                <button className="modal-close" onClick={() => setShowMethodology(false)}>
+                  Fechar
+                </button>
+              </div>
+
+              <div className="methodology-grid">
+                {methodologySections.map((section) => (
+                  <div key={section.title} className="methodology-card">
+                    <h3>{section.title}</h3>
+                    <ul className="methodology-list">
+                      {section.items.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {selectedIdeology && (
+          <div className="overlay" onClick={closeDetail}>
+            <div className="modal-panel profile-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-head">
+                <div>
+                  <div className="hero-kicker">Ideologia</div>
+                  <h2>{selectedIdeology.name}</h2>
+                </div>
+                <button className="modal-close" onClick={closeDetail}>
+                  Fechar
+                </button>
+              </div>
+
+              <div className="profile-modal-grid">
+                <div className="glass-inset">
+                  <span className="metric-label">Semelhança</span>
+                  <div className="big-similarity">{selectedIdeologyMatch?.similarity ?? '—'}%</div>
+                </div>
+                <div className="glass-inset">
+                  <span className="metric-label">Descrição</span>
+                  <p>{selectedIdeology.shortDescription}</p>
+                </div>
+              </div>
+
+              <div className="axis-compare-list">{renderAxisComparison(selectedIdeology.vector)}</div>
+            </div>
+          </div>
+        )}
+
+        {selectedFigure && (
+          <div className="overlay" onClick={closeDetail}>
+            <div className="modal-panel profile-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-head">
+                <div>
+                  <div className="hero-kicker">Figura histórica</div>
+                  <h2>{selectedFigure.name}</h2>
+                </div>
+                <button className="modal-close" onClick={closeDetail}>
+                  Fechar
+                </button>
+              </div>
+
+              <div className="profile-modal-grid">
+                <div className="glass-inset">
+                  <span className="metric-label">Semelhança</span>
+                  <div className="big-similarity">{selectedFigureMatch?.similarity ?? '—'}%</div>
+                </div>
+                <div className="glass-inset">
+                  <span className="metric-label">Perfil</span>
+                  <p>{selectedFigure.role} · {selectedFigure.era}</p>
+                </div>
+              </div>
+
+              <div className="axis-compare-list">{renderAxisComparison(selectedFigure.vector)}</div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -396,7 +653,9 @@ function App() {
         <section className="question-shell">
           <div className="question-head">
             <div>
-              <div className="hero-kicker">Pergunta {currentIndex + 1} de {questions.length}</div>
+              <div className="hero-kicker">
+                {testMode === 'quick' ? 'Modo rápido' : 'Modo completo'} · Pergunta {currentIndex + 1} de {activeQuestions.length}
+              </div>
               <h1>{currentQuestion.text}</h1>
               <span className="question-badge">{currentQuestion.category}</span>
             </div>
@@ -408,7 +667,7 @@ function App() {
               </div>
               <div className="question-stat">
                 <span>Progresso</span>
-                <strong>{Math.round(((currentIndex + 1) / questions.length) * 100)}%</strong>
+                <strong>{Math.round(((currentIndex + 1) / activeQuestions.length) * 100)}%</strong>
               </div>
             </div>
           </div>
@@ -416,7 +675,7 @@ function App() {
           <div className="progress-bar">
             <div
               className="progress-fill"
-              style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
+              style={{ width: `${((currentIndex + 1) / activeQuestions.length) * 100}%` }}
             />
           </div>
 
@@ -449,12 +708,44 @@ function App() {
             <button className="secondary-btn" onClick={previousQuestion} disabled={currentIndex === 0}>
               Anterior
             </button>
+            <button className="secondary-btn" onClick={() => setShowMethodology(true)}>
+              Metodologia
+            </button>
             <button className="secondary-btn" onClick={resetTest}>
               Recomeçar
             </button>
           </div>
         </section>
       </div>
+
+      {showMethodology && (
+        <div className="overlay" onClick={() => setShowMethodology(false)}>
+          <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <div className="hero-kicker">Metodologia</div>
+                <h2>Como este teste funciona</h2>
+              </div>
+              <button className="modal-close" onClick={() => setShowMethodology(false)}>
+                Fechar
+              </button>
+            </div>
+
+            <div className="methodology-grid">
+              {methodologySections.map((section) => (
+                <div key={section.title} className="methodology-card">
+                  <h3>{section.title}</h3>
+                  <ul className="methodology-list">
+                    {section.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

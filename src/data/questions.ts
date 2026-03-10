@@ -535,3 +535,29 @@ export const questions: Question[] = [
     ]
   }
 ];
+export const quickQuestionIds = [
+  'q1',
+  'q2',
+  'q3',
+  'q6',
+  'q9',
+  'q10',
+  'q11',
+  'q13',
+  'q14',
+  'q15',
+  'q17',
+  'q20',
+  'q21',
+  'q27',
+  'q28',
+  'q29',
+  'q33',
+  'q35',
+  'q39',
+  'q40',
+  'q41',
+  'q42',
+  'q44',
+  'q45',
+];
