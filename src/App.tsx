@@ -4,6 +4,12 @@ import { axes } from './data/axes';
 import { questions } from './data/questions';
 import { buildUserVector, getTopFigureMatches, getTopIdeologyMatches } from './utils/scoring';
 import { buildNarrative, buildShareText } from './utils/narrative';
+import {
+  getCoherenceInsight,
+  getFamilyInsights,
+  getFigureExplanation,
+  getIdeologyExplanation,
+} from './utils/insights';
 import type { AnswerMap, AnswerValue } from './types';
 
 const answerOptions: { label: string; value: AnswerValue }[] = [
@@ -16,7 +22,7 @@ const answerOptions: { label: string; value: AnswerValue }[] = [
   { label: 'Concordo totalmente', value: 3 },
 ];
 
-const STORAGE_KEY = 'teste-politico-estado-v2';
+const STORAGE_KEY = 'teste-politico-estado-v3';
 
 function formatSigned(value: number): string {
   return value > 0 ? `+${value.toFixed(1)}` : value.toFixed(1);
@@ -57,27 +63,47 @@ function App() {
   const userVector = useMemo(() => buildUserVector(answers), [answers]);
   const ideologyMatches = useMemo(() => getTopIdeologyMatches(userVector, 10), [userVector]);
   const figureMatches = useMemo(() => getTopFigureMatches(userVector, 10), [userVector]);
-  const narrative = useMemo(() => buildNarrative(userVector, ideologyMatches, figureMatches), [userVector, ideologyMatches, figureMatches]);
-  const shareText = useMemo(() => buildShareText(userVector, ideologyMatches, figureMatches), [userVector, ideologyMatches, figureMatches]);
+  const narrative = useMemo(
+    () => buildNarrative(userVector, ideologyMatches, figureMatches),
+    [userVector, ideologyMatches, figureMatches]
+  );
+  const shareText = useMemo(
+    () => buildShareText(userVector, ideologyMatches, figureMatches),
+    [userVector, ideologyMatches, figureMatches]
+  );
 
-const answerValues = Object.values(answers).filter(
-  (value): value is Exclude<AnswerValue, null> =>
-    value !== null && value !== undefined
-);
+  const familyInsights = useMemo(() => getFamilyInsights(userVector, 4), [userVector]);
+  const coherenceInsight = useMemo(() => getCoherenceInsight(answers), [answers]);
 
-const answeredCount = answerValues.length;
-const skippedCount = Object.values(answers).filter((value) => value === null).length;
-const completion = Math.round(((answeredCount + skippedCount) / questions.length) * 100);
-const responseRate = Math.round((answeredCount / questions.length) * 100);
+  const topIdeologyExplanation = useMemo(
+    () =>
+      ideologyMatches[0] ? getIdeologyExplanation(userVector, ideologyMatches[0].id) : null,
+    [userVector, ideologyMatches]
+  );
 
-const conviction =
-  answeredCount === 0
-    ? 0
-    : Math.round(
-        (answerValues.reduce<number>((sum, value) => sum + Math.abs(value), 0) /
-          (answeredCount * 3)) *
-          100
-      );
+  const topFigureExplanation = useMemo(
+    () => (figureMatches[0] ? getFigureExplanation(userVector, figureMatches[0].id) : null),
+    [userVector, figureMatches]
+  );
+
+  const answerValues = Object.values(answers).filter(
+    (value): value is Exclude<AnswerValue, null> =>
+      value !== null && value !== undefined
+  );
+
+  const answeredCount = answerValues.length;
+  const skippedCount = Object.values(answers).filter((value) => value === null).length;
+  const completion = Math.round(((answeredCount + skippedCount) / questions.length) * 100);
+  const responseRate = Math.round((answeredCount / questions.length) * 100);
+
+  const conviction =
+    answeredCount === 0
+      ? 0
+      : Math.round(
+          (answerValues.reduce<number>((sum, value) => sum + Math.abs(value), 0) /
+            (answeredCount * 3)) *
+            100
+        );
 
   function startTest() {
     setStarted(true);
@@ -137,9 +163,9 @@ const conviction =
             <div className="hero-kicker">Teste político de nova geração</div>
             <h1>Mais do que esquerda e direita.</h1>
             <p className="lead">
-              Este teste procura medir o teu perfil político em várias dimensões, com
-              linguagem simples, explicações claras e resultados muito mais ricos do
-              que os testes tradicionais.
+              Este teste mede o teu perfil político em várias dimensões, com linguagem
+              simples, explicações claras e resultados muito mais ricos do que os testes
+              tradicionais.
             </p>
 
             <div className="hero-grid">
@@ -149,11 +175,11 @@ const conviction =
               </div>
               <div className="glass-card">
                 <h3>Resultado interpretado</h3>
-                <p>No fim recebes um perfil textual, não apenas números soltos e barras frias.</p>
+                <p>No fim recebes narrativa, famílias ideológicas, coerência interna e correspondências históricas.</p>
               </div>
               <div className="glass-card">
-                <h3>Escalável e robusto</h3>
-                <p>A estrutura já está pronta para muitas mais perguntas, ideologias e figuras históricas.</p>
+                <h3>Robusto e escalável</h3>
+                <p>A estrutura está preparada para crescer com mais perguntas, perfis, páginas e metodologia pública.</p>
               </div>
             </div>
 
@@ -219,6 +245,84 @@ const conviction =
             </div>
           </section>
 
+          <section className="insight-grid">
+            <div className="glass-card">
+              <h2>Famílias ideológicas mais próximas</h2>
+              <div className="family-stack">
+                {familyInsights.map((family) => (
+                  <div key={family.id} className="family-card">
+                    <div className="match-top">
+                      <strong>{family.name}</strong>
+                      <span>{family.score}%</span>
+                    </div>
+                    <p>{family.description}</p>
+                    <p className="subtle-text">
+                      Exemplos: {family.examples.join(', ')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="glass-card">
+              <h2>Coerência interna</h2>
+              <div className="coherence-score">{coherenceInsight.score}%</div>
+              <p className="coherence-label">{coherenceInsight.label}</p>
+              <p className="subtle-text">
+                Foram avaliadas {coherenceInsight.comparedPairs} relações internas entre respostas potencialmente tensas.
+              </p>
+
+              {coherenceInsight.warnings.length > 0 ? (
+                <div className="warning-list">
+                  {coherenceInsight.warnings.map((warning, index) => (
+                    <div key={index} className="warning-card">
+                      <strong>{warning.title}</strong>
+                      <p>{warning.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="subtle-text">
+                  Não apareceram tensões fortes nas combinações principais avaliadas.
+                </p>
+              )}
+            </div>
+
+            <div className="glass-card">
+              <h2>Porque sais próximo desta ideologia</h2>
+              {topIdeologyExplanation ? (
+                <div className="explanation-block">
+                  <p>{topIdeologyExplanation.intro}</p>
+                  <ul className="explanation-list">
+                    {topIdeologyExplanation.bullets.map((bullet, index) => (
+                      <li key={index}>{bullet}</li>
+                    ))}
+                  </ul>
+                  <p className="subtle-text">{topIdeologyExplanation.caution}</p>
+                </div>
+              ) : (
+                <p className="subtle-text">Ainda sem explicação disponível.</p>
+              )}
+            </div>
+
+            <div className="glass-card">
+              <h2>Porque sais próximo desta figura</h2>
+              {topFigureExplanation ? (
+                <div className="explanation-block">
+                  <p>{topFigureExplanation.intro}</p>
+                  <ul className="explanation-list">
+                    {topFigureExplanation.bullets.map((bullet, index) => (
+                      <li key={index}>{bullet}</li>
+                    ))}
+                  </ul>
+                  <p className="subtle-text">{topFigureExplanation.caution}</p>
+                </div>
+              ) : (
+                <p className="subtle-text">Ainda sem explicação disponível.</p>
+              )}
+            </div>
+          </section>
+
           <section className="results-grid">
             <div className="glass-card large-card">
               <h2>Eixos políticos</h2>
@@ -255,13 +359,13 @@ const conviction =
               <h2>Ideologias mais próximas</h2>
               <div className="match-list">
                 {ideologyMatches.map((match) => (
-                  <div key={match.id} className="match-card">
-                    <div className="match-top">
-                      <strong>{match.name}</strong>
-                      <span>{match.similarity}%</span>
-                    </div>
+                  <details key={match.id} className="details-card">
+                    <summary className="details-summary">
+                      <span>{match.name}</span>
+                      <strong>{match.similarity}%</strong>
+                    </summary>
                     <p>{match.shortDescription}</p>
-                  </div>
+                  </details>
                 ))}
               </div>
             </div>
@@ -270,13 +374,13 @@ const conviction =
               <h2>Figuras mais próximas</h2>
               <div className="match-list">
                 {figureMatches.map((match) => (
-                  <div key={match.id} className="match-card">
-                    <div className="match-top">
-                      <strong>{match.name}</strong>
-                      <span>{match.similarity}%</span>
-                    </div>
+                  <details key={match.id} className="details-card">
+                    <summary className="details-summary">
+                      <span>{match.name}</span>
+                      <strong>{match.similarity}%</strong>
+                    </summary>
                     <p>{match.role} · {match.era}</p>
-                  </div>
+                  </details>
                 ))}
               </div>
             </div>

@@ -73,14 +73,14 @@ function directionScore(a: AxisVector, b: AxisVector): number {
   return (points / axes.length) * 100;
 }
 
-function profileSimilarity(a: AxisVector, b: AxisVector): number {
+export function profileSimilarity(a: AxisVector, b: AxisVector): number {
   const closeness = closenessScore(a, b);
   const direction = directionScore(a, b);
 
   return Math.round(closeness * 0.8 + direction * 0.2);
 }
 
-export function getTopIdeologyMatches(userVector: AxisVector, count = 8): MatchResult[] {
+export function getTopIdeologyMatches(userVector: AxisVector, count = 10): MatchResult[] {
   return ideologies
     .map((profile) => ({
       id: profile.id,
@@ -92,7 +92,7 @@ export function getTopIdeologyMatches(userVector: AxisVector, count = 8): MatchR
     .slice(0, count);
 }
 
-export function getTopFigureMatches(userVector: AxisVector, count = 8): MatchResult[] {
+export function getTopFigureMatches(userVector: AxisVector, count = 10): MatchResult[] {
   return figures
     .map((profile) => ({
       id: profile.id,
