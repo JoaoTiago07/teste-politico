@@ -3,6 +3,7 @@ import './index.css';
 import { axes } from './data/axes';
 import { questions } from './data/questions';
 import { buildUserVector, getTopFigureMatches, getTopIdeologyMatches } from './utils/scoring';
+import { buildNarrative, buildShareText } from './utils/narrative';
 import type { AnswerMap, AnswerValue } from './types';
 
 const answerOptions: { label: string; value: AnswerValue }[] = [
@@ -15,13 +16,18 @@ const answerOptions: { label: string; value: AnswerValue }[] = [
   { label: 'Concordo totalmente', value: 3 },
 ];
 
-const STORAGE_KEY = 'teste-politico-estado-v1';
+const STORAGE_KEY = 'teste-politico-estado-v2';
+
+function formatSigned(value: number): string {
+  return value > 0 ? `+${value.toFixed(1)}` : value.toFixed(1);
+}
 
 function App() {
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<AnswerMap>({});
+  const [copyFeedback, setCopyFeedback] = useState('');
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -46,14 +52,22 @@ function App() {
   }, [started, finished, currentIndex, answers]);
 
   const currentQuestion = questions[currentIndex];
+  const currentAnswer = currentQuestion ? answers[currentQuestion.id] : undefined;
 
   const userVector = useMemo(() => buildUserVector(answers), [answers]);
-  const ideologyMatches = useMemo(() => getTopIdeologyMatches(userVector, 5), [userVector]);
-  const figureMatches = useMemo(() => getTopFigureMatches(userVector, 5), [userVector]);
+  const ideologyMatches = useMemo(() => getTopIdeologyMatches(userVector, 8), [userVector]);
+  const figureMatches = useMemo(() => getTopFigureMatches(userVector, 8), [userVector]);
+  const narrative = useMemo(() => buildNarrative(userVector, ideologyMatches, figureMatches), [userVector, ideologyMatches, figureMatches]);
+  const shareText = useMemo(() => buildShareText(userVector, ideologyMatches, figureMatches), [userVector, ideologyMatches, figureMatches]);
 
-  const answeredCount = Object.values(answers).filter((value) => value !== null && value !== undefined).length;
+  const answerValues = Object.values(answers).filter((value): value is number => value !== null && value !== undefined);
+  const answeredCount = answerValues.length;
   const skippedCount = Object.values(answers).filter((value) => value === null).length;
-  const progress = Math.round((currentIndex / questions.length) * 100);
+  const completion = Math.round(((answeredCount + skippedCount) / questions.length) * 100);
+  const responseRate = Math.round((answeredCount / questions.length) * 100);
+  const conviction = answeredCount === 0
+    ? 0
+    : Math.round((answerValues.reduce((sum, value) => sum + Math.abs(value), 0) / (answeredCount * 3)) * 100);
 
   function startTest() {
     setStarted(true);
@@ -91,6 +105,18 @@ function App() {
     setFinished(false);
     setCurrentIndex(0);
     setAnswers({});
+    setCopyFeedback('');
+  }
+
+  async function copyResults() {
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setCopyFeedback('Resultado copiado.');
+      setTimeout(() => setCopyFeedback(''), 2000);
+    } catch {
+      setCopyFeedback('Não foi possível copiar.');
+      setTimeout(() => setCopyFeedback(''), 2000);
+    }
   }
 
   if (!started) {
@@ -98,32 +124,32 @@ function App() {
       <div className="page">
         <div className="shell">
           <section className="hero">
-            <p className="eyebrow">Teste político robusto</p>
-            <h1>Descobre o teu perfil político com muito mais profundidade.</h1>
+            <div className="hero-kicker">Teste político de nova geração</div>
+            <h1>Mais do que esquerda e direita.</h1>
             <p className="lead">
-              Este teste não te reduz a esquerda vs direita. Mede várias dimensões,
-              explica cada pergunta de forma simples e compara-te com ideologias e
-              figuras políticas.
+              Este teste procura medir o teu perfil político em várias dimensões, com
+              linguagem simples, explicações claras e resultados muito mais ricos do
+              que os testes tradicionais.
             </p>
 
             <div className="hero-grid">
-              <div className="card">
-                <h3>O que mede</h3>
-                <p>8 eixos políticos independentes, com lógica preparada para escalar para mais de 100 perguntas.</p>
+              <div className="glass-card">
+                <h3>Explicações simples</h3>
+                <p>Cada pergunta pode ser aberta e explicada para quem não domina jargão político.</p>
               </div>
-              <div className="card">
-                <h3>Como responde</h3>
-                <p>Cada pergunta inclui ajuda simples, exemplo e escala gradual de concordância.</p>
+              <div className="glass-card">
+                <h3>Resultado interpretado</h3>
+                <p>No fim recebes um perfil textual, não apenas números soltos e barras frias.</p>
               </div>
-              <div className="card">
-                <h3>O que recebes</h3>
-                <p>Resultado por eixos, afinidade ideológica e semelhança com líderes e filósofos.</p>
+              <div className="glass-card">
+                <h3>Escalável e robusto</h3>
+                <p>A estrutura já está pronta para muitas mais perguntas, ideologias e figuras históricas.</p>
               </div>
             </div>
 
-            <div className="actions">
+            <div className="hero-actions">
               <button className="primary-btn" onClick={startTest}>
-                Começar teste
+                Começar
               </button>
               <button className="secondary-btn" onClick={resetTest}>
                 Limpar progresso
@@ -139,17 +165,53 @@ function App() {
     return (
       <div className="page">
         <div className="shell">
-          <section className="result-header">
-            <p className="eyebrow">Resultado final</p>
+          <section className="result-hero">
+            <div className="hero-kicker">Resultado final</div>
             <h1>O teu perfil político</h1>
             <p className="lead">
-              Respondeste a {answeredCount} perguntas e saltaste {skippedCount}.
+              Respondeste a {answeredCount} perguntas, saltaste {skippedCount} e concluíste {completion}% do teste.
             </p>
+
+            <div className="metric-grid">
+              <div className="metric-card">
+                <span className="metric-label">Taxa de resposta</span>
+                <strong>{responseRate}%</strong>
+              </div>
+              <div className="metric-card">
+                <span className="metric-label">Convicção média</span>
+                <strong>{conviction}%</strong>
+              </div>
+              <div className="metric-card">
+                <span className="metric-label">Ideologia mais próxima</span>
+                <strong>{ideologyMatches[0]?.name ?? '—'}</strong>
+              </div>
+              <div className="metric-card">
+                <span className="metric-label">Figura mais próxima</span>
+                <strong>{figureMatches[0]?.name ?? '—'}</strong>
+              </div>
+            </div>
           </section>
 
-          <section className="result-grid">
-            <div className="card">
-              <h2>Eixos</h2>
+          <section className="summary-card">
+            <h2>Leitura interpretativa</h2>
+            {narrative.map((paragraph, index) => (
+              <p key={index}>{paragraph}</p>
+            ))}
+
+            <div className="hero-actions">
+              <button className="primary-btn" onClick={copyResults}>
+                Copiar resumo
+              </button>
+              <button className="secondary-btn" onClick={resetTest}>
+                Refazer teste
+              </button>
+              {copyFeedback && <span className="copy-feedback">{copyFeedback}</span>}
+            </div>
+          </section>
+
+          <section className="results-grid">
+            <div className="glass-card large-card">
+              <h2>Eixos políticos</h2>
               <div className="axis-list">
                 {axes.map((axis) => {
                   const value = userVector[axis.id];
@@ -157,13 +219,18 @@ function App() {
 
                   return (
                     <div key={axis.id} className="axis-row">
-                      <div className="axis-head">
-                        <strong>{axis.label}</strong>
-                        <span>{value.toFixed(1)}</span>
+                      <div className="axis-header">
+                        <div>
+                          <strong>{axis.label}</strong>
+                          <p>{axis.description}</p>
+                        </div>
+                        <span className="axis-value">{formatSigned(value)}</span>
                       </div>
+
                       <div className="axis-bar">
                         <div className="axis-fill" style={{ width: `${percent}%` }} />
                       </div>
+
                       <div className="axis-labels">
                         <span>{axis.leftLabel}</span>
                         <span>{axis.rightLabel}</span>
@@ -174,11 +241,11 @@ function App() {
               </div>
             </div>
 
-            <div className="card">
+            <div className="glass-card">
               <h2>Ideologias mais próximas</h2>
               <div className="match-list">
                 {ideologyMatches.map((match) => (
-                  <div key={match.id} className="match-item">
+                  <div key={match.id} className="match-card">
                     <div className="match-top">
                       <strong>{match.name}</strong>
                       <span>{match.similarity}%</span>
@@ -189,11 +256,11 @@ function App() {
               </div>
             </div>
 
-            <div className="card">
+            <div className="glass-card">
               <h2>Figuras mais próximas</h2>
               <div className="match-list">
                 {figureMatches.map((match) => (
-                  <div key={match.id} className="match-item">
+                  <div key={match.id} className="match-card">
                     <div className="match-top">
                       <strong>{match.name}</strong>
                       <span>{match.similarity}%</span>
@@ -204,12 +271,6 @@ function App() {
               </div>
             </div>
           </section>
-
-          <div className="actions">
-            <button className="primary-btn" onClick={resetTest}>
-              Refazer teste
-            </button>
-          </div>
         </div>
       </div>
     );
@@ -218,20 +279,31 @@ function App() {
   return (
     <div className="page">
       <div className="shell">
-        <section className="question-panel">
-          <div className="question-top">
+        <section className="question-shell">
+          <div className="question-head">
             <div>
-              <p className="eyebrow">Pergunta {currentIndex + 1} de {questions.length}</p>
+              <div className="hero-kicker">Pergunta {currentIndex + 1} de {questions.length}</div>
               <h1>{currentQuestion.text}</h1>
-              <span className="badge">{currentQuestion.category}</span>
+              <span className="question-badge">{currentQuestion.category}</span>
             </div>
-            <div className="progress-box">
-              <span>{progress}%</span>
+
+            <div className="question-stats">
+              <div className="question-stat">
+                <span>Respondidas</span>
+                <strong>{answeredCount}</strong>
+              </div>
+              <div className="question-stat">
+                <span>Progresso</span>
+                <strong>{Math.round(((currentIndex + 1) / questions.length) * 100)}%</strong>
+              </div>
             </div>
           </div>
 
           <div className="progress-bar">
-            <div className="progress-fill" style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }} />
+            <div
+              className="progress-fill"
+              style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
+            />
           </div>
 
           <details className="help-box">
@@ -240,23 +312,26 @@ function App() {
             <p><strong>Exemplo:</strong> {currentQuestion.example}</p>
           </details>
 
-          <div className="answers">
+          <div className="answers-grid">
             {answerOptions.map((option) => (
               <button
                 key={String(option.value)}
-                className="answer-btn"
+                className={`answer-btn ${currentAnswer === option.value ? 'active' : ''}`}
                 onClick={() => answerQuestion(option.value)}
               >
                 {option.label}
               </button>
             ))}
 
-            <button className="skip-btn" onClick={() => answerQuestion(null)}>
+            <button
+              className={`skip-btn ${currentAnswer === null ? 'active' : ''}`}
+              onClick={() => answerQuestion(null)}
+            >
               Saltar pergunta
             </button>
           </div>
 
-          <div className="nav-row">
+          <div className="hero-actions">
             <button className="secondary-btn" onClick={previousQuestion} disabled={currentIndex === 0}>
               Anterior
             </button>
